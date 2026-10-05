@@ -12,42 +12,37 @@ st.set_page_config(page_title="Segundo Cerebro Adri", page_icon="🧠", layout="
 if "groq_key" not in st.session_state:
     st.session_state.groq_key = ""
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role":"system","content":"Sos el segundo cerebro de Adri de Florencio Varela. Sos su asistente personal que habla. Respondé siempre como si hablaras, corto, rioplatense, amable, con memoria. Sos su amigo que lo ayuda con todo."}]
+    st.session_state.mensajes = [{"role":"system","content":"Sos el segundo cerebro de Adri de Florencio Varela. Rioplatense, corto, amigo. Enseñás inglés y todo lo que pida. Respondé hablando."}]
 if "ultimo_audio" not in st.session_state:
     st.session_state.ultimo_audio = None
+if "voz_b64" not in st.session_state:
+    st.session_state.voz_b64 = None
 if "abrir_url" not in st.session_state:
     st.session_state.abrir_url = None
 
-def hablar_por_voz(texto):
+def crear_voz(texto):
     try:
         tts = gTTS(text=texto[:400], lang='es', tld='com.ar', slow=False)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             tts.save(fp.name)
             with open(fp.name, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-                # Esto hace que HABLE SOLO sin apretar play
-                st.markdown(f'<audio autoplay controls><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
+                return base64.b64encode(f.read()).decode()
     except:
-        pass
+        return None
 
-def detectar_red(texto):
-    t = texto.lower()
-    redes = {"instagram":"https://www.instagram.com","facebook":"https://www.facebook.com","youtube":"https://www.youtube.com","tiktok":"https://www.tiktok.com","whatsapp":"https://web.whatsapp.com"}
-    for n,u in redes.items():
-        if n in t and ("abri" in t or "abrir" in t):
-            return n,u
-    return None,None
-
-# MICROFONO FIJO ARRIBA - NO SE VA MAS
+# Microfono fijo arriba
 st.markdown("""
 <style>
 div[data-testid="stAudioInput"] {position: sticky; top: 10px; z-index: 999; background: #1a1a1a; padding: 15px; border-radius: 15px; border: 2px solid #ff4b4b;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 Tu Segundo Cerebro que HABLA")
+st.title("🧠 Tu Segundo Cerebro que HABLA SIEMPRE")
 
-# --- LLAVE ---
+# --- ESTO ES LO QUE FALTABA: REPRODUCE LA ULTIMA VOZ SIEMPRE ARRIBA ---
+if st.session_state.voz_b64:
+    st.markdown(f'<audio autoplay controls style="width:100%"><source src="data:audio/mp3;base64,{st.session_state.voz_b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
+
 if not st.session_state.groq_key:
     st.link_button("🔑 1- Crear llave gratis", "https://console.groq.com/keys")
     nueva = st.text_input("2- Pegá tu llave gsk_...", type="password")
@@ -59,7 +54,6 @@ if not st.session_state.groq_key:
 
 client = Groq(api_key=st.session_state.groq_key)
 
-# ABRIR REDES
 if st.session_state.abrir_url:
     url = st.session_state.abrir_url
     st.link_button(f"👉 ABRIR {st.session_state.abrir_nombre.upper()}", url, type="primary", use_container_width=True)
@@ -69,11 +63,9 @@ if st.session_state.abrir_url:
         st.rerun()
     st.stop()
 
-# --- ACA ESTA LO QUE QUERES: MICRO ARRIBA Y QUE TE HABLE ---
-st.write("### 🎤 Preguntale, te responde hablando:")
-audio = st.audio_input("Apretá, preguntá y soltá. Te responde por voz.", key="mic_cerebro_habla")
-
-texto_chat = st.chat_input("O escribí acá...")
+st.write("### 🎤 Hablale, te responde hablando siempre:")
+audio = st.audio_input("Apretá, hablá y soltá", key="mic_fijo")
+texto_chat = st.chat_input("O escribí 'enseñame inglés'...")
 
 prompt = None
 if audio and audio.getvalue()!= st.session_state.ultimo_audio:
@@ -82,37 +74,35 @@ if audio and audio.getvalue()!= st.session_state.ultimo_audio:
         try:
             trans = client.audio.transcriptions.create(file=("a.wav", audio.getvalue()), model="whisper-large-v3", language="es")
             prompt = trans.text
-            st.write(f"🎤 Vos dijiste: **{prompt}**")
         except Exception as e:
-            st.error(f"No te escuché: {e}")
+            st.error(f"Error: {e}")
 elif texto_chat:
     prompt = texto_chat
 
 if prompt:
-    red_n, red_u = detectar_red(prompt)
-    if red_u:
-        st.session_state.abrir_url = red_u
-        st.session_state.abrir_nombre = red_n
-        hablar_por_voz(f"Dale Adri, abriendo {red_n}")
-        st.rerun()
-    else:
-        st.session_state.mensajes.append({"role":"user","content":prompt})
-        with st.spinner("🧠 Pensando y hablando..."):
-            respuesta = None
-            for modelo in ["llama-3.3-70b-versatile","openai/gpt-oss-20b","qwen/qwen3-32b"]:
-                try:
-                    r = client.chat.completions.create(model=modelo, messages=st.session_state.mensajes, max_tokens=500)
-                    respuesta = r.choices[0].message.content
-                    break
-                except:
-                    continue
-            if respuesta:
-                st.session_state.mensajes.append({"role":"assistant","content":respuesta})
-                st.chat_message("assistant").write(respuesta)
-                hablar_por_voz(respuesta) # <--- ACA TE HABLA POR VOZ DIRECTO
+    st.session_state.mensajes.append({"role":"user","content":prompt})
+    with st.spinner("🧠 Respondiendo con voz..."):
+        respuesta = None
+        for modelo in ["llama-3.3-70b-versatile","openai/gpt-oss-20b","qwen/qwen3-32b"]:
+            try:
+                r = client.chat.completions.create(model=modelo, messages=st.session_state.mensajes, max_tokens=600, temperature=0.7)
+                respuesta = r.choices[0].message.content
+                break
+            except:
+                continue
+        if respuesta:
+            st.session_state.mensajes.append({"role":"assistant","content":respuesta})
+            b64 = crear_voz(respuesta)
+            if b64:
+                st.session_state.voz_b64 = b64
+            st.rerun()
 
-# Historial abajo
-st.divider()
+# Historial
 for m in st.session_state.mensajes[1:]:
     with st.chat_message(m["role"]):
         st.write(m["content"])
+
+if st.button("🗑️ Borrar chat"):
+    st.session_state.mensajes = [st.session_state.mensajes[0]]
+    st.session_state.voz_b64 = None
+    st.rerun()
