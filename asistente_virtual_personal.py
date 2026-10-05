@@ -19,11 +19,7 @@ if "voz_b64" not in st.session_state:
     st.session_state.voz_b64 = None
 if "abrir_url" not in st.session_state:
     st.session_state.abrir_url = None
-def limpiar_para_voz(texto):
-    import re
-    texto = re.sub(r'\*\*(.*?)\*\*', r'\1', texto)
-    texto = texto.replace('**','').replace('*','').replace('#','').replace('`','')
-    return texto
+
 def crear_voz(texto):
     try:
         tts = gTTS(text=texto[:400], lang='es', tld='com.ar', slow=False)
@@ -33,7 +29,11 @@ def crear_voz(texto):
                 return base64.b64encode(f.read()).decode()
     except:
         return None
-
+def limpiar_para_voz(texto):
+    import re
+    texto = re.sub(r'\*\*(.*?)\*\*', r'\1', texto)
+    texto = texto.replace('**','').replace('*','').replace('#','').replace('`','')
+    return texto
 # Microfono fijo arriba
 st.markdown("""
 <style>
