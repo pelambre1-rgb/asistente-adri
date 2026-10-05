@@ -29,6 +29,7 @@ MEM_PATH = os.path.join(RUTA, "memoria_adri.json")
 
 PROMPT_SISTEMA = """
 Sos el Segundo Cerebro de Adri, su asistente virtual personal.
+RESPONDÉ SIEMPRE EN ESPAÑOL. Nunca respondas en inglés ni en otro idioma, salvo que Adri te pida explícitamente una traducción o practicar otro idioma.
 Hablás en español rioplatense, de manera natural, clara y útil.
 
 REGLAS:
@@ -66,6 +67,9 @@ if "voz_b64" not in st.session_state:
 
 if "ultimo_error" not in st.session_state:
     st.session_state.ultimo_error = None
+
+if "ultimo_modelo" not in st.session_state:
+    st.session_state.ultimo_modelo = None
 
 if "memoria" not in st.session_state:
     st.session_state.memoria = []
@@ -159,6 +163,7 @@ def crear_voz(texto):
             text=limpio,
             lang="es",
             tld="com.ar",
+            lang_check=True,
             slow=False
         )
 
@@ -243,6 +248,73 @@ def guardar_dato_memoria(texto):
         )
 
 
+def parece_ingles(respuesta):
+    """Detecta de forma conservadora respuestas claramente en inglés."""
+    if not respuesta:
+        return False
+
+    palabras = re.findall(r"\\b[a-zA-Z]+\\b", respuesta.lower())
+    if len(palabras) < 12:
+        return False
+
+    ingles = {
+        "the", "you", "your", "are", "is", "this", "that",
+        "with", "and", "what", "how", "why", "can", "will",
+        "have", "has", "from", "for", "about", "please",
+        "because", "here", "there", "would", "could"
+    }
+
+    espanol = {
+        "el", "la", "los", "las", "que", "para", "con",
+        "una", "uno", "como", "por", "del", "en", "es",
+        "este", "esta", "puede", "podés", "quiero", "tenés"
+    }
+
+    ingles_score = sum(1 for p in palabras if p in ingles)
+    espanol_score = sum(1 for p in palabras if p in espanol)
+
+    return ingles_score >= 3 and ingles_score > espanol_score
+
+
+def corregir_idioma(client, respuesta):
+    """Si el modelo respondió claramente en inglés, pide una reformulación en español."""
+    if not parece_ingles(respuesta):
+        return respuesta
+
+    try:
+        r = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Respondé exclusivamente en español rioplatense. "
+                        "No traduzcas nombres propios ni términos técnicos necesarios."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Reescribí la siguiente respuesta EN ESPAÑOL, "
+                        "manteniendo exactamente su significado y sin agregar información:\n\n"
+                        + respuesta
+                    )
+                }
+            ],
+            max_tokens=600,
+            temperature=0.2
+        )
+
+        corregida = r.choices[0].message.content
+        if corregida and corregida.strip():
+            return corregida.strip()
+
+    except Exception:
+        pass
+
+    return respuesta
+
+
 def obtener_respuesta(client, mensajes):
     """
     Prueba los modelos en orden y devuelve:
@@ -256,12 +328,13 @@ def obtener_respuesta(client, mensajes):
                 model=modelo,
                 messages=mensajes,
                 max_tokens=600,
-                temperature=0.7
+                temperature=0.5
             )
 
             respuesta = r.choices[0].message.content
 
             if respuesta and respuesta.strip():
+                respuesta = corregir_idioma(client, respuesta)
                 return respuesta.strip(), modelo, errores
 
             errores.append(
@@ -321,11 +394,13 @@ st.caption("Groq + Whisper + memoria persistente + voz")
 if st.session_state.voz_b64:
     st.markdown(
         f"""
-        <audio autoplay controls style="width:100%">
+        <audio controls autoplay playsinline style="width:100%">
             <source
                 src="data:audio/mp3;base64,{st.session_state.voz_b64}"
-                type="audio/mp3">
+                type="audio/mpeg">
+            Tu navegador no pudo reproducir el audio.
         </audio>
+        <small>🔊 Si el navegador bloquea la reproducción automática, tocá ▶️.</small>
         """,
         unsafe_allow_html=True
     )
@@ -465,6 +540,11 @@ if prompt:
             st.session_state.voz_b64 = b64
         else:
             st.session_state.voz_b64 = None
+            if not st.session_state.ultimo_error:
+                st.session_state.ultimo_error = (
+                    "La respuesta de texto funcionó, pero no pude generar el audio. "
+                    "Revisá el mensaje de diagnóstico."
+                )
 
         st.session_state.ultimo_error = None
 
