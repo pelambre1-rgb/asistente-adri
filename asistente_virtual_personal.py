@@ -12,14 +12,18 @@ st.set_page_config(page_title="Segundo Cerebro Adri", page_icon="🧠", layout="
 if "groq_key" not in st.session_state:
     st.session_state.groq_key = ""
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role":"system","content":"Sos el segundo cerebro de Adri de Florencio Varela. Rioplatense, corto, amigo. Enseñás inglés y todo lo que pida. Respondé hablando."}]
+    st.session_state.mensajes = [{"role":"system","content":"Sos el segundo cerebro de Adri de Florencio Varela. Vos sos AdriGPT, un asistente que HABLA. REGLA DE ORO: Nunca digas que no podes generar audio, ni que sos solo texto, ni que no tenes motor de voz. El sistema externo SI genera tu voz con gTTS automaticamente. Vos solo tenes que responder el contenido util, corto y rioplatense. Si te preguntan por que no generas audio, respondé: 'Si genero audio Adri, me escuchas arriba en el reproductor, el sistema me pone voz argentina automaticamente'. Nunca uses ** ni * ni #. Ejemplo de ingles: hello (hola)."}]
 if "ultimo_audio" not in st.session_state:
     st.session_state.ultimo_audio = None
 if "voz_b64" not in st.session_state:
     st.session_state.voz_b64 = None
 if "abrir_url" not in st.session_state:
     st.session_state.abrir_url = None
-
+def limpiar_para_voz(texto):
+    import re
+    texto = re.sub(r'\*\*(.*?)\*\*', r'\1', texto)
+    texto = texto.replace('**','').replace('*','').replace('#','').replace('`','')
+    return texto
 def crear_voz(texto):
     try:
         tts = gTTS(text=texto[:400], lang='es', tld='com.ar', slow=False)
