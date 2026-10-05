@@ -3,47 +3,50 @@ from groq import Groq
 from gtts import gTTS
 import tempfile
 import base64
-from datetime import datetime
-import pytz
+import re
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Segundo Cerebro Adri", page_icon="🧠", layout="centered")
 
+# --- MEMORIA ---
 if "groq_key" not in st.session_state:
     st.session_state.groq_key = ""
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = [{"role":"system","content":"Sos el segundo cerebro de Adri de Florencio Varela. Vos sos AdriGPT, un asistente que HABLA. REGLA DE ORO: Nunca digas que no podes generar audio, ni que sos solo texto, ni que no tenes motor de voz. El sistema externo SI genera tu voz con gTTS automaticamente. Vos solo tenes que responder el contenido util, corto y rioplatense. Si te preguntan por que no generas audio, respondé: 'Si genero audio Adri, me escuchas arriba en el reproductor, el sistema me pone voz argentina automaticamente'. Nunca uses ** ni * ni #. Ejemplo de ingles: hello (hola)."}]
+    st.session_state.mensajes = []
 if "ultimo_audio" not in st.session_state:
     st.session_state.ultimo_audio = None
 if "voz_b64" not in st.session_state:
     st.session_state.voz_b64 = None
-if "abrir_url" not in st.session_state:
-    st.session_state.abrir_url = None
+
+# FORZAMOS EL CEREBRO NUEVO SIEMPRE - ACÁ ESTABA EL BUG
+PROMPT_SISTEMA = "Sos el segundo cerebro de Adri de Florencio Varela. Sos AdriGPT y VOS SI HABLAS. REGLA DE ORO: NUNCA digas que no podes generar audio, nunca digas que sos solo texto, nunca digas que no tenes motor de voz. El sistema externo te da voz argentina con gTTS automaticamente. Si te preguntan 'por que no podes generar audio', responde: 'Si puedo Adri, me escuchas arriba en el reproductor, tengo voz'. Hablas rioplatense, corto, util. Nunca uses ** ni * ni #. Para ingles deci: hello (hola)."
+
+# Si la memoria esta vacia o tiene el prompt viejo, lo pisamos
+if len(st.session_state.mensajes) == 0 or "arquitectura" in str(st.session_state.mensajes[0]):
+    st.session_state.mensajes = [{"role":"system","content":PROMPT_SISTEMA}]
+else:
+    # Actualizamos siempre el system para que no vuelva la excusa
+    st.session_state.mensajes[0] = {"role":"system","content":PROMPT_SISTEMA}
+
+def limpiar_para_voz(texto):
+    texto = re.sub(r'\*\*(.*?)\*\*', r'\1', texto)
+    texto = re.sub(r'\*(.*?)\*', r'\1', texto)
+    return texto.replace('**','').replace('*','').replace('#','').replace('`','')
 
 def crear_voz(texto):
     try:
-        tts = gTTS(text=texto[:400], lang='es', tld='com.ar', slow=False)
+        limpio = limpiar_para_voz(texto)[:450]
+        tts = gTTS(text=limpio, lang='es', tld='com.ar', slow=False)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             tts.save(fp.name)
             with open(fp.name, "rb") as f:
                 return base64.b64encode(f.read()).decode()
     except:
         return None
-def limpiar_para_voz(texto):
-    import re
-    texto = re.sub(r'\*\*(.*?)\*\*', r'\1', texto)
-    texto = texto.replace('**','').replace('*','').replace('#','').replace('`','')
-    return texto
-# Microfono fijo arriba
-st.markdown("""
-<style>
-div[data-testid="stAudioInput"] {position: sticky; top: 10px; z-index: 999; background: #1a1a1a; padding: 15px; border-radius: 15px; border: 2px solid #ff4b4b;}
-</style>
-""", unsafe_allow_html=True)
 
-st.title("🧠 Tu Segundo Cerebro que HABLA SIEMPRE")
+st.markdown("""<style>div[data-testid="stAudioInput"] {position: sticky; top: 10px; z-index: 999; background: #1a1a1a; padding: 15px; border-radius: 15px; border: 2px solid #ff4b4b;}</style>""", unsafe_allow_html=True)
+st.title("🧠 Tu Segundo Cerebro que HABLA")
 
-# --- ESTO ES LO QUE FALTABA: REPRODUCE LA ULTIMA VOZ SIEMPRE ARRIBA ---
 if st.session_state.voz_b64:
     st.markdown(f'<audio autoplay controls style="width:100%"><source src="data:audio/mp3;base64,{st.session_state.voz_b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
 
@@ -58,17 +61,8 @@ if not st.session_state.groq_key:
 
 client = Groq(api_key=st.session_state.groq_key)
 
-if st.session_state.abrir_url:
-    url = st.session_state.abrir_url
-    st.link_button(f"👉 ABRIR {st.session_state.abrir_nombre.upper()}", url, type="primary", use_container_width=True)
-    components.html(f'<script>window.open("{url}", "_blank")</script>', height=0)
-    if st.button("Volver"):
-        st.session_state.abrir_url = None
-        st.rerun()
-    st.stop()
-
-st.write("### 🎤 Hablale, te responde hablando siempre:")
-audio = st.audio_input("Apretá, hablá y soltá", key="mic_fijo")
+st.write("### 🎤 Hablale:")
+audio = st.audio_input("Apretá, hablá y soltá", key="mic_v63_final")
 texto_chat = st.chat_input("O escribí 'enseñame inglés'...")
 
 prompt = None
@@ -101,12 +95,11 @@ if prompt:
                 st.session_state.voz_b64 = b64
             st.rerun()
 
-# Historial
 for m in st.session_state.mensajes[1:]:
     with st.chat_message(m["role"]):
         st.write(m["content"])
 
 if st.button("🗑️ Borrar chat"):
-    st.session_state.mensajes = [st.session_state.mensajes[0]]
+    st.session_state.mensajes = [{"role":"system","content":PROMPT_SISTEMA}]
     st.session_state.voz_b64 = None
     st.rerun()
